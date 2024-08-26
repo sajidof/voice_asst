@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sajid's Voice Assistant V1</title>
+</head>
+<body>
+    <h1>Sajid's Voice Assistant V1</h1>
+
+    <!-- Buttons to start and stop audio -->
+    <button id="startButton">Start Recording</button>  
+    <button id="stopButton">Stop Recording</button>
+
+    <script>
+        // Create websocket connection
+        const ws = new WebSocket('ws://localhost:8000/ws');  // Connect to Websocket server
+
+        let mediaRecorder;
+        let audioChunks = [];
+
+        document.getElementById('startButton').addEventListener('click', async () => {
+            // When start recording is pressed, only stop recording and be pressed
+            document.getElementById('startButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+
+            // Request microphone access
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'audio/webm',  // This can be 'audio/webm' or 'audio/ogg'
+                audioBitsPerSecond: 16000  // Higher bitrate for 16-bit audio, adjust as necessary
+            });
+
+            // If there's audio data in the media recorder, add it to the chunks
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+            
+            // When stop is pressed, send audio bytes in chunk list to Websocket
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const arrayBuffer = await audioBlob.arrayBuffer();
+
+                console.log("Sending audio data:", arrayBuffer.byteLength, "bytes");  // Log the size of the data being sent
+
+                ws.send(arrayBuffer);
+
+                audioChunks = [];  // Clear chunks for the next recording
+            };
+
+            // When start button is clicked, start recording via mediaRecorder
+            mediaRecorder.start();
+        });
+
+        // If stop is clicked, stop mediaRecorder
+        document.getElementById('stopButton').addEventListener('click', () => {
+            document.getElementById('startButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
+            mediaRecorder.stop();
+        });
+
+        // Store incoming response audio bytes in blob and play it through speakers
+        ws.onmessage = async (event) => {
+            const arrayBuffer = await event.data.arrayBuffer();
+            const audioBlob = new Blob([arrayBuffer], { type: 'audio/mp3' });
+
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            audio.play();
+
+            console.log("Received and playing audio:", arrayBuffer.byteLength, "bytes");
+        };
+    </script>
+</body>
+</html>
